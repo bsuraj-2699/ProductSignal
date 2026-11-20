@@ -1,0 +1,122 @@
+# ProductSignal SaaS Product Vibe Configuration
+# This configuration defines the analytical lens for SaaS products
+
+product_type: "service_based"
+product_category: "saas"
+
+# Analytical focus areas for SaaS products
+analytical_focus:
+  - "workflow_efficiency"
+  - "reliability"
+  - "feature_adoption"
+  - "user_onboarding"
+  - "customer_retention"
+  - "integration_performance"
+  - "business_value"
+  - "productivity"
+
+# Classification taxonomy for SaaS feedback
+classification_taxonomy:
+  primary_categories:
+    - "reliability_downtime"
+    - "performance_speed"
+    - "workflow_efficiency"
+    - "feature_usability"
+    - "user_onboarding"
+    - "integration_issues"
+    - "reporting_analytics"
+    - "data_accuracy"
+    - "feature_request"
+    - "pricing_value"
+    - "customer_support"
+    - "other_unclear"
+
+  category_descriptions:
+    reliability_downtime: "System outages, crashes, unavailable features, service disruptions"
+    performance_speed: "Slow loading, latency, timeouts, unresponsive UI"
+    workflow_efficiency: "Cumbersome processes, too many steps, inefficient workflows"
+    feature_usability: "Confusing UI, difficult features, poor discoverability"
+    user_onboarding: "Setup difficulties, learning curve, missing guidance"
+    integration_issues: "API problems, third-party integration failures, data sync issues"
+    reporting_analytics: "Missing reports, inaccurate dashboards, limited analytics"
+    data_accuracy: "Incorrect data, data loss, synchronization errors"
+    feature_request: "New feature suggestions, enhancement requests"
+    pricing_value: "Cost concerns, licensing issues, perceived value"
+    customer_support: "Slow response, unhelpful support, escalation problems"
+    other_unclear: "Feedback that doesn't fit other categories or is too vague"
+
+# Opportunity scoring weights (must sum to 1.0)
+scoring_weights:
+  frequency: 0.25
+  severity: 0.25
+  segment_impact: 0.20
+  recency: 0.10
+  business_relevance: 0.20
+
+# Analytical questions for SaaS products
+analytical_questions:
+  problem_discovery:
+    - "What are customers repeatedly complaining about?"
+    - "Which workflows cause the most friction?"
+    - "Which features are difficult to use?"
+    - "What prevents customers from completing tasks?"
+    - "What capabilities are customers requesting?"
+
+  product_reliability:
+    - "Which features experience frequent failures?"
+    - "Are customers reporting slow processing?"
+    - "Are integrations creating problems?"
+    - "Are users experiencing data loss or inconsistent results?"
+    - "Which problems interrupt business-critical workflows?"
+
+  adoption_and_retention:
+    - "Which features are customers struggling to adopt?"
+    - "What causes users to abandon workflows?"
+    - "What makes customers consider switching platforms?"
+    - "Which features generate positive feedback?"
+    - "What capabilities could increase customer value?"
+
+  business_impact:
+    - "Which problems affect the largest customer segments?"
+    - "Which issues potentially increase support costs?"
+    - "Which issues could threaten customer retention?"
+    - "Which improvements could increase productivity?"
+    - "Which problems should product teams investigate first?"
+
+# Confidence threshold for flagging uncertain classifications
+confidence_review_threshold: 0.7
+
+# Opportunity brief sections for SaaS
+opportunity_brief_sections:
+  - "problem_statement"
+  - "customer_impact"
+  - "evidence_summary"
+  - "affected_segments"
+  - "frequency_and_severity"
+  - "existing_limitations"
+  - "potential_opportunities"
+  - "risks_and_assumptions"
+  - "recommended_investigation"
+  - "suggested_next_steps"
+
+# Evidence traceability guardrails
+evidence_guardrails:
+  require_evidence_references: true
+  distinguish_facts_from_assumptions: true
+  flag_unsupported_claims: true
+  preserve_original_feedback: true
+  max_claims_without_evidence: 0
+
+# Clustering configuration
+clustering:
+  similarity_threshold: 0.75
+  min_cluster_size: 2
+  max_clusters: 50
+  representative_selection: "centroid"
+
+# Classification configuration
+classification:
+  batch_size: 10
+  max_retries: 3
+  timeout_seconds: 30
+  temperature: 0.1

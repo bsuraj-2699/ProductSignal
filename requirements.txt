@@ -1,0 +1,13 @@
+# ProductSignal Dependencies
+# Pinned versions tested with Python 3.14 (Python 3.12 not available in environment)
+# Target compatibility: Python 3.12+
+
+streamlit==1.67.0
+pydantic==2.14.3
+pydantic-settings==2.16.3
+pandas==3.1.1
+pyyaml==6.0.3
+scikit-learn==1.9.1
+sentence-transformers==6.3.0
+pytest==9.2.0
+pytest-cov==7.1.0
