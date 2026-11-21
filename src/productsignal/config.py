@@ -9,22 +9,7 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, field_validator
 import yaml
 
-
-def _get_project_root() -> Path:
-    """
-    Get the project root directory.
-
-    Uses the location of this module to find the project root,
-    independent of the current working directory.
-    """
-    # This file is at src/productsignal/config.py
-    # Project root is 3 levels up
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def _get_default_config_dir() -> Path:
-    """Get the default vibes configuration directory."""
-    return _get_project_root() / "config" / "vibes"
+from ._paths import get_default_config_dir
 
 
 class ScoringWeights(BaseModel):
@@ -141,7 +126,7 @@ def load_vibe_config(vibe_key: str, config_dir: Optional[Path] = None) -> Produc
     """
     # Cache key includes resolved config_dir to support multiple config directories (F5)
     if config_dir is None:
-        config_dir = _get_default_config_dir()
+        config_dir = get_default_config_dir()
     else:
         config_dir = config_dir.resolve()
     
@@ -164,7 +149,7 @@ def load_vibe_config(vibe_key: str, config_dir: Optional[Path] = None) -> Produc
 def get_cached_vibe(vibe_key: str, config_dir: Optional[Path] = None) -> Optional[ProductVibe]:
     """Get a cached vibe configuration without loading from disk."""
     if config_dir is None:
-        config_dir = _get_default_config_dir()
+        config_dir = get_default_config_dir()
     else:
         config_dir = config_dir.resolve()
     cache_key = f"{vibe_key}:{config_dir}"
@@ -179,7 +164,7 @@ def clear_vibe_cache() -> None:
 def list_available_vibes(config_dir: Optional[Path] = None) -> List[str]:
     """List available vibe configuration keys."""
     if config_dir is None:
-        config_dir = _get_default_config_dir()
+        config_dir = get_default_config_dir()
 
     if not config_dir.exists():
         return []

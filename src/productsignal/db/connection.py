@@ -11,22 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Generator
 
-
-def _get_project_root() -> Path:
-    """
-    Get the project root directory.
-
-    Uses the location of this module to find the project root,
-    independent of the current working directory.
-    """
-    # This file is at src/productsignal/db/connection.py
-    # Project root is 3 levels up
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def _get_default_db_path() -> Path:
-    """Get the default database path relative to project root."""
-    return _get_project_root() / "data" / "productsignal.db"
+from .._paths import get_project_root, get_default_db_path
 
 
 def get_database_path() -> Path:
@@ -34,7 +19,7 @@ def get_database_path() -> Path:
     db_path = os.environ.get("PRODUCTSIGNAL_DB_PATH")
     if db_path:
         return Path(db_path)
-    return _get_default_db_path()
+    return get_default_db_path()
 
 
 @contextmanager

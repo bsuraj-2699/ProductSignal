@@ -30,9 +30,24 @@ Customer Feedback → Problem Discovery → Evidence → Prioritization → Oppo
 - **Configurable Classification Taxonomy** — Validation uses active vibe or explicit taxonomy
 - **Test Suite** — 100+ tests covering models, database, config, product context, app
 
-### Planned (Phase 2+)
+### Implemented (Phase 2.1-2.3 — Feedback Ingestion)
 
-- **CSV Feedback Ingestion** — Upload, column mapping, validation, preview
+- **CSV Feedback Ingestion** — Upload, validation, preview, and import for the **Kaggle Customer Support Tickets schema only**
+- **Feedback Text Construction** — Combines Ticket Subject and Ticket Description with placeholder replacement
+- **External ID Namespacing** — Namespaced IDs (`kaggle_support:{Ticket ID}`) to prevent cross-dataset collisions
+- **Timestamp Handling** — First Response Time used as proxy for creation time (NULL when missing; no fallback to Date of Purchase)
+- **Rating Validation** — Only integer-valued 1-5 ratings accepted; fractional values rejected and set to NULL
+- **Original Category Construction** — Combines Ticket Type and Ticket Subject
+- **PII Exclusion** — Customer Name, Email, Age, Gender are never persisted
+- **Duplicate Import Prevention** — Database-level unique constraint on (product_id, external_id)
+- **Repeated Content Preservation** — Content hashes computed for detection only; repeated feedback is never deduplicated
+- **Atomic Import Transactions** — Single database transaction; unexpected failures roll back entire import
+- **Preview & Validation** — Schema validation, data quality metrics, sample records, column mapping display
+- **Temporary File Cleanup** — Uploaded CSVs cleaned up after processing; PII in uploads never persists
+- **Streamlit Ingestion Page** — Interactive upload, preview, validation, and import workflow
+
+### Planned (Phase 2.4+)
+
 - **AI Classification** — LLM-powered feedback classification (12 SaaS categories)
 - **Semantic Clustering** — Embedding-based grouping of similar feedback
 - **Opportunity Scoring** — Transparent prioritization (frequency, severity, segment impact, recency, business relevance)
@@ -40,6 +55,8 @@ Customer Feedback → Problem Discovery → Evidence → Prioritization → Oppo
 - **Experiment Hypotheses** — Testable product hypotheses from opportunities
 - **Draft PRD Generation** — Editable product requirement documents
 - **Integrations** — Zendesk, Intercom, Jira, Linear, App Store, Google Play
+
+> **Note:** The current ingestion implementation supports the validated Kaggle Customer Support Tickets schema only. Generic user-defined column mapping is **not implemented** and remains planned functionality. The dataset is synthetic and intended for pipeline testing, not genuine SaaS model evaluation.
 
 ## Technology Stack
 
