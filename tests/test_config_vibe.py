@@ -264,7 +264,8 @@ class TestVibeCacheIsolation:
                 "opportunity_brief_sections": [],
                 "evidence_guardrails": {},
                 "clustering": {},
-                "classification": {}
+                "classification": {},
+                "provider": {"name": "ollama", "model": "test-model"}
             }
             
             # Config 2: modified SaaS with different categories
@@ -285,7 +286,8 @@ class TestVibeCacheIsolation:
                 "opportunity_brief_sections": [],
                 "evidence_guardrails": {},
                 "clustering": {},
-                "classification": {}
+                "classification": {},
+                "provider": {"name": "ollama", "model": "test-model"}
             }
             
             (config_dir1 / "saas.yaml").write_text(yaml.dump(saas_config_1))
@@ -339,7 +341,8 @@ class TestVibeCacheIsolation:
                 "opportunity_brief_sections": [],
                 "evidence_guardrails": {},
                 "clustering": {},
-                "classification": {}
+                "classification": {},
+                "provider": {"name": "ollama", "model": "test-model"}
             }
             (config_dir / "saas.yaml").write_text(yaml.dump(saas_config))
             
@@ -356,3 +359,114 @@ class TestVibeCacheIsolation:
             with tempfile.TemporaryDirectory() as tmpdir2:
                 config_dir2 = Path(tmpdir2)
                 assert get_cached_vibe("saas", config_dir2) is None
+
+class TestProviderConfig:
+    """Tests for LLM provider configuration (Phase 3.1.3)."""
+
+    def test_saas_vibe_has_provider_config(self):
+        """The SaaS vibe ships a complete provider configuration."""
+        vibe = load_vibe_config("saas")
+        assert vibe.provider.name == "ollama"
+        assert vibe.provider.model == "qwen2.5:7b"
+        assert vibe.provider.base_url == "http://localhost:11434"
+        assert vibe.provider.timeout_seconds > 0
+
+    def test_valid_provider_config_with_defaults(self):
+        from productsignal.config import ProviderConfig
+
+        config = ProviderConfig(name="ollama", model="qwen2.5:7b")
+        assert config.name == "ollama"
+        assert config.model == "qwen2.5:7b"
+        assert config.base_url == "http://localhost:11434"
+        assert config.timeout_seconds == 30.0
+
+    def test_fake_provider_name_accepted(self):
+        from productsignal.config import ProviderConfig
+
+        config = ProviderConfig(name="fake", model="fake-model")
+        assert config.name == "fake"
+
+    def test_invalid_provider_name_rejected(self):
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception) as exc_info:
+            ProviderConfig(name="openai", model="gpt-4")
+        assert "ollama" in str(exc_info.value) and "fake" in str(exc_info.value)
+
+    def test_missing_provider_name_rejected(self):
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception):
+            ProviderConfig(model="qwen2.5:7b")
+
+    def test_missing_model_rejected(self):
+        """A missing model name is a configuration error, not a silent default."""
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception):
+            ProviderConfig(name="ollama")
+
+    def test_empty_model_rejected(self):
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception):
+            ProviderConfig(name="ollama", model="   ")
+
+    def test_invalid_base_url_rejected(self):
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception, match="http"):
+            ProviderConfig(name="ollama", model="m", base_url="ftp://localhost:11434")
+
+    def test_base_url_trailing_slash_stripped(self):
+        from productsignal.config import ProviderConfig
+
+        config = ProviderConfig(name="ollama", model="m", base_url="http://localhost:11434/")
+        assert config.base_url == "http://localhost:11434"
+
+    def test_invalid_timeout_rejected(self):
+        from productsignal.config import ProviderConfig
+
+        with pytest.raises(Exception):
+            ProviderConfig(name="ollama", model="m", timeout_seconds=0)
+        with pytest.raises(Exception):
+            ProviderConfig(name="ollama", model="m", timeout_seconds=-5)
+
+    def test_vibe_yaml_without_provider_rejected(self):
+        """A vibe YAML missing the provider section fails loudly at load time."""
+        import tempfile
+        import yaml
+        from productsignal.config import load_vibe_config
+
+        saas_config = {
+            "product_type": "service_based",
+            "product_category": "saas",
+            "classification_taxonomy": {
+                "primary_categories": ["cat_a"],
+                "category_descriptions": {}
+            },
+            "scoring_weights": {
+                "frequency": 0.25, "severity": 0.25, "segment_impact": 0.20,
+                "recency": 0.10, "business_relevance": 0.20
+            },
+            "classification": {}
+            # no "provider" key
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            (config_dir / "novibe.yaml").write_text(yaml.dump(saas_config))
+            with pytest.raises(Exception):
+                load_vibe_config("novibe", config_dir)
+
+    def test_existing_saas_classification_settings_intact(self):
+        """Adding provider configuration did not disturb existing settings."""
+        vibe = load_vibe_config("saas")
+        assert vibe.classification.batch_size == 10
+        assert vibe.classification.max_retries == 3
+        assert vibe.classification.timeout_seconds == 30
+        assert vibe.classification.temperature == 0.1
+        assert vibe.confidence_review_threshold == 0.7
+        assert vibe.clustering.similarity_threshold == 0.75
+        weights = vibe.scoring_weights
+        assert (weights.frequency, weights.severity, weights.segment_impact,
+                weights.recency, weights.business_relevance) == (0.25, 0.25, 0.20, 0.10, 0.20)

@@ -23,11 +23,11 @@ class TestDatabaseInitialization:
         assert health["status"] == "healthy"
         assert health["foreign_keys_enabled"] is True
         assert health["wal_mode"] is True
-        assert health["table_count"] == 10
+        assert health["table_count"] == 11
 
         expected_tables = {
-            "products", "feedback", "classifications", "clusters",
-            "cluster_feedback", "opportunities", "opportunity_evidence",
+            "products", "feedback", "classifications", "classification_attempts",
+            "clusters", "cluster_feedback", "opportunities", "opportunity_evidence",
             "briefs", "experiments", "prds"
         }
         assert set(health["tables"]) == expected_tables
@@ -43,7 +43,7 @@ class TestDatabaseInitialization:
         initialize_database(clean_db)
         health2 = check_database_health(clean_db)
         assert health2["status"] == "healthy"
-        assert health2["table_count"] == 10
+        assert health2["table_count"] == 11
 
     def test_foreign_keys_enforced(self, clean_db):
         """Test that foreign key constraints are enforced."""

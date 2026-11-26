@@ -347,3 +347,310 @@ class TestConfigurableTaxonomy:
         assert "reliability_downtime" in categories
         assert "feature_request" in categories
         assert len(categories) == 12
+
+class TestPhase31ClassificationFields:
+    """Tests for the Phase 3.1 classification model extensions."""
+
+    def _base_kwargs(self, **overrides):
+        kwargs = {
+            "feedback_id": 1,
+            "product_id": 1,
+            "primary_category": "reliability_downtime",
+            "sentiment": "negative",
+            "severity": "high",
+            "summary": "Dashboard crashes on load",
+            "confidence": 0.9,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def test_new_fields_accepted(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        classification = ClassificationCreate(
+            **self._base_kwargs(
+                evidence_quotes=[
+                    EvidenceQuote(quote="Dashboard crashes on load", supports="category"),
+                    EvidenceQuote(quote="crashes", supports="severity"),
+                ],
+                classification_reasoning="Crash wording indicates reliability issue",
+                mentioned_feature="dashboard",
+                is_actionable=True,
+                model_name="qwen2.5:7b",
+                prompt_version="cls-v1",
+            )
+        )
+        assert len(classification.evidence_quotes) == 2
+        assert classification.evidence_quotes[0].quote == "Dashboard crashes on load"
+        assert classification.evidence_quotes[0].supports == "category"
+        assert classification.classification_reasoning == "Crash wording indicates reliability issue"
+        assert classification.mentioned_feature == "dashboard"
+        assert classification.is_actionable is True
+        assert classification.model_name == "qwen2.5:7b"
+        assert classification.prompt_version == "cls-v1"
+
+    def test_evidence_quote_rejects_empty(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        with pytest.raises(ValidationError):
+            EvidenceQuote(quote="", supports="category")
+        with pytest.raises(ValidationError):
+            EvidenceQuote(quote="   ", supports="severity")
+
+    def test_evidence_quote_rejects_invalid_supports(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        with pytest.raises(ValidationError):
+            EvidenceQuote(quote="text", supports="fabricated_aspect")
+
+    def test_evidence_quote_value_not_modified(self):
+        """The quote is stored exactly as provided — never stripped or normalized."""
+        from productsignal.models.classification import EvidenceQuote
+
+        quote = EvidenceQuote(quote="  Dashboard crashes  ", supports="category")
+        assert quote.quote == "  Dashboard crashes  "
+
+    def test_classification_status_defaults_to_active(self):
+        classification = ClassificationCreate(**self._base_kwargs())
+        assert classification.classification_status == "active"
+
+    def test_classification_status_superseded_accepted(self):
+        classification = ClassificationCreate(
+            **self._base_kwargs(classification_status="superseded")
+        )
+        assert classification.classification_status == "superseded"
+
+    def test_invalid_classification_status_rejected(self):
+        with pytest.raises(ValidationError) as exc_info:
+            ClassificationCreate(**self._base_kwargs(classification_status="pending"))
+        # Pydantic's Literal rejects invalid statuses before any field validator
+        assert "Input should be 'active' or 'superseded'" in str(exc_info.value)
+
+    def test_null_confidence_allowed(self):
+        """Deterministic fallback rows carry NULL confidence (no false certainty)."""
+        classification = ClassificationCreate(
+            **self._base_kwargs(confidence=None, is_actionable=False, needs_review=True)
+        )
+        assert classification.confidence is None
+
+    def test_confidence_out_of_range_still_rejected(self):
+        with pytest.raises(ValidationError):
+            ClassificationCreate(**self._base_kwargs(confidence=1.5))
+        with pytest.raises(ValidationError):
+            ClassificationCreate(**self._base_kwargs(confidence=-0.1))
+
+    def test_from_create_preserves_null_confidence(self):
+        create = ClassificationCreate(**self._base_kwargs(confidence=None))
+        record = Classification.from_create(create)
+        assert record.confidence is None
+        assert record.classification_status == "active"
+
+    def test_sentiment_and_severity_independent(self):
+        """Positive tone with critical impact is legitimate — no cross-rejection."""
+        classification = ClassificationCreate(
+            **self._base_kwargs(sentiment="positive", severity="critical")
+        )
+        assert classification.sentiment == "positive"
+        assert classification.severity == "critical"
+
+        classification_mixed = ClassificationCreate(
+            **self._base_kwargs(sentiment="mixed", severity="critical")
+        )
+        assert classification_mixed.sentiment == "mixed"
+
+    def test_validate_classification_dict_with_phase31_fields(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        data = {
+            "feedback_id": 1,
+            "product_id": 1,
+            "primary_category": "reliability_downtime",
+            "sentiment": "negative",
+            "severity": "critical",
+            "summary": "System down",
+            "confidence": 0.85,
+            "evidence_quotes": [
+                {"quote": "system down", "supports": "severity"},
+            ],
+            "classification_reasoning": "Outage language",
+            "is_actionable": True,
+            "classification_status": "active",
+            "model_name": "qwen2.5:7b",
+        }
+        result = validate_classification_dict(data)
+        assert result.evidence_quotes[0].quote == "system down"
+        assert result.model_name == "qwen2.5:7b"
+
+    def test_null_confidence_via_validate_classification_dict(self):
+        data = {
+            "feedback_id": 1,
+            "product_id": 1,
+            "primary_category": "other_unclear",
+            "sentiment": "neutral",
+            "severity": "low",
+            "summary": "Unclassifiable — insufficient content (deterministic fallback)",
+            "confidence": None,
+            "needs_review": True,
+            "is_actionable": False,
+            "model_name": "deterministic",
+        }
+        result = validate_classification_dict(data)
+        assert result.confidence is None
+        assert result.needs_review is True
+
+    def test_invalid_error_type_constant_matches_schema(self):
+        from productsignal.models.classification import (
+            VALID_ATTEMPT_ERROR_TYPES,
+            VALID_CLASSIFICATION_STATUSES,
+            MAX_RAW_RESPONSE_LENGTH,
+        )
+        assert VALID_ATTEMPT_ERROR_TYPES == (
+            "invalid_json", "validation_error", "provider_error", "timeout"
+        )
+        assert VALID_CLASSIFICATION_STATUSES == ("active", "superseded")
+        assert MAX_RAW_RESPONSE_LENGTH == 8000
+
+
+class TestAssignmentValidation:
+    """Assignment-time validation (validate_assignment=True) closes the
+    mutation loophole: invalid values set after construction are rejected (Issue 2)."""
+
+    def _valid_create(self):
+        return ClassificationCreate(
+            feedback_id=1,
+            product_id=1,
+            primary_category="reliability_downtime",
+            sentiment="negative",
+            severity="high",
+            summary="Dashboard crashes on load",
+            confidence=0.9,
+        )
+
+    def test_invalid_sentiment_assignment_rejected(self):
+        classification = self._valid_create()
+        with pytest.raises(ValidationError):
+            classification.sentiment = "hostile"
+        assert classification.sentiment == "negative"  # unchanged
+
+    def test_invalid_severity_assignment_rejected(self):
+        classification = self._valid_create()
+        with pytest.raises(ValidationError):
+            classification.severity = "cosmic"
+        assert classification.severity == "high"
+
+    def test_invalid_primary_category_assignment_rejected(self):
+        classification = self._valid_create()
+        with pytest.raises(ValidationError):
+            classification.primary_category = "not_a_real_category"
+        assert classification.primary_category == "reliability_downtime"
+
+    def test_invalid_classification_status_assignment_rejected(self):
+        classification = self._valid_create()
+        with pytest.raises(ValidationError):
+            classification.classification_status = "pending"
+        assert classification.classification_status == "active"
+
+    def test_invalid_confidence_assignment_rejected(self):
+        classification = self._valid_create()
+        with pytest.raises(ValidationError):
+            classification.confidence = 1.7
+        assert classification.confidence == 0.9
+
+    def test_valid_assignments_accepted(self):
+        classification = self._valid_create()
+        classification.sentiment = "positive"
+        classification.severity = "critical"
+        classification.primary_category = "performance_speed"
+        classification.classification_status = "superseded"
+        classification.confidence = None
+        classification.needs_review = True
+
+        assert classification.sentiment == "positive"
+        assert classification.severity == "critical"
+        assert classification.primary_category == "performance_speed"
+        assert classification.classification_status == "superseded"
+        assert classification.confidence is None
+        assert classification.needs_review is True
+
+    def test_assignment_validates_on_record_model(self):
+        record = Classification.from_create(self._valid_create())
+        with pytest.raises(ValidationError):
+            record.classification_status = "archived"
+        record.classification_status = "superseded"  # valid still works
+        assert record.classification_status == "superseded"
+
+    def test_evidence_quote_invalid_assignment_rejected(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        quote = EvidenceQuote(quote="crashes", supports="category")
+        with pytest.raises(ValidationError):
+            quote.quote = ""
+        with pytest.raises(ValidationError):
+            quote.quote = "   "
+        with pytest.raises(ValidationError):
+            quote.supports = "fabricated_aspect"
+        assert quote.quote == "crashes"
+        assert quote.supports == "category"
+
+    def test_evidence_quote_valid_assignment_accepted(self):
+        from productsignal.models.classification import EvidenceQuote
+
+        quote = EvidenceQuote(quote="crashes", supports="category")
+        quote.quote = "crashes on load"
+        quote.supports = "severity"
+        assert quote.quote == "crashes on load"
+        assert quote.supports == "severity"
+
+    def test_classification_attempt_invalid_assignment_rejected(self):
+        from productsignal.models.classification import ClassificationAttempt
+
+        attempt = ClassificationAttempt(
+            attempt_id=1, feedback_id=1, product_id=1,
+            attempt_number=1, error_type="timeout",
+        )
+        with pytest.raises(ValidationError):
+            attempt.attempt_number = 0
+        with pytest.raises(ValidationError):
+            attempt.error_type = "weird_error"
+        assert attempt.attempt_number == 1
+        assert attempt.error_type == "timeout"
+
+    def test_assignment_respects_custom_vibe_taxonomy(self):
+        """Assignment validation uses the same taxonomy context as construction,
+        so custom Product Vibe taxonomies keep working."""
+        custom_categories = frozenset({"legacy_export", "custom_category"})
+        from productsignal.models.classification import _valid_categories_ctx
+        token = _valid_categories_ctx.set(custom_categories)
+        try:
+            classification = ClassificationCreate(
+                feedback_id=1,
+                product_id=1,
+                primary_category="custom_category",
+                sentiment="negative",
+                severity="high",
+                summary="Dashboard crashes on load",
+            )
+            # A default-taxonomy category is invalid under the custom vibe
+            with pytest.raises(ValidationError):
+                classification.primary_category = "reliability_downtime"
+            # A custom-taxonomy category is accepted
+            classification.primary_category = "legacy_export"
+            assert classification.primary_category == "legacy_export"
+        finally:
+            _valid_categories_ctx.reset(token)
+
+    def test_evidence_supports_values_match_literal(self):
+        import typing
+        from productsignal.models.classification import EvidenceQuote, EVIDENCE_SUPPORTS_VALUES
+
+        literal_args = typing.get_args(EvidenceQuote.model_fields["supports"].annotation)
+        assert EVIDENCE_SUPPORTS_VALUES == literal_args
+
+    def test_sentiment_severity_values_match_literals(self):
+        import typing
+        from productsignal.models.classification import (
+            ClassificationBase, SENTIMENT_VALUES, SEVERITY_VALUES,
+        )
+
+        assert SENTIMENT_VALUES == typing.get_args(ClassificationBase.model_fields["sentiment"].annotation)
+        assert SEVERITY_VALUES == typing.get_args(ClassificationBase.model_fields["severity"].annotation)

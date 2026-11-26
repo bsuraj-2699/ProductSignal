@@ -5,7 +5,7 @@ Handles loading and validation of Product Vibe configurations from YAML.
 """
 
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel, Field, field_validator
 import yaml
 
@@ -52,6 +52,44 @@ class ClassificationConfig(BaseModel):
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
 
 
+class ProviderConfig(BaseModel):
+    """
+    LLM provider configuration for AI classification.
+
+    There are no silent fallbacks: every vibe YAML must name a provider and a
+    model explicitly, so a missing or misconfigured provider surfaces at
+    configuration load time instead of failing obscurely at inference time.
+    """
+
+    name: Literal["ollama", "fake"] = Field(
+        ..., description="LLM backend to use for classification"
+    )
+    model: str = Field(
+        ..., min_length=1, description="Model name as known by the provider"
+    )
+    base_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama API base URL (ignored by non-HTTP providers)",
+    )
+    timeout_seconds: float = Field(
+        default=30.0, gt=0, description="Per-request timeout in seconds"
+    )
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("base_url must be an http:// or https:// URL")
+        return v.rstrip("/")
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("model must be a non-empty name")
+        return v
+
+
 class EvidenceGuardrails(BaseModel):
     """Evidence traceability guardrails."""
 
@@ -82,6 +120,9 @@ class ProductVibe(BaseModel):
     evidence_guardrails: EvidenceGuardrails = Field(default_factory=EvidenceGuardrails)
     clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
     classification: ClassificationConfig = Field(default_factory=ClassificationConfig)
+    provider: ProviderConfig = Field(
+        ..., description="LLM provider used for AI classification"
+    )
 
     @field_validator("product_type")
     @classmethod

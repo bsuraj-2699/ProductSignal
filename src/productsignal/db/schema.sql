@@ -83,6 +83,16 @@ CREATE TABLE IF NOT EXISTS classifications (
     confidence REAL CHECK (confidence >= 0.0 AND confidence <= 1.0),
     needs_review BOOLEAN DEFAULT FALSE,
     model_version TEXT,
+    -- Phase 3.1 classification extensions
+    evidence_quotes TEXT,  -- JSON [{quote, supports}]; verbatim quotes from feedback.feedback_text
+    classification_reasoning TEXT,  -- model explanation; audit trail, never treated as evidence
+    mentioned_feature TEXT,
+    is_actionable BOOLEAN,
+    classification_status TEXT NOT NULL DEFAULT 'active'
+        CHECK (classification_status IN ('active', 'superseded')),
+    model_name TEXT,  -- 'qwen2.5:7b' | 'human' | 'deterministic'
+    prompt_version TEXT,  -- e.g. 'cls-v1'
+    error_note TEXT,  -- set only when a reclassification attempt failed (see lifecycle design)
     classified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (feedback_id) REFERENCES feedback(feedback_id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
@@ -93,6 +103,37 @@ CREATE INDEX IF NOT EXISTS idx_classifications_feedback_id ON classifications(fe
 CREATE INDEX IF NOT EXISTS idx_classifications_product_id ON classifications(product_id);
 CREATE INDEX IF NOT EXISTS idx_classifications_primary_category ON classifications(primary_category);
 CREATE INDEX IF NOT EXISTS idx_classifications_needs_review ON classifications(needs_review);
+
+-- NOTE: uq_classifications_active (partial unique index enforcing at most one ACTIVE
+-- classification per feedback) is intentionally NOT created here. On databases created
+-- before Phase 3.1 the classification_status column does not exist when this script
+-- runs, so creating the index at this point would fail. It is created idempotently by
+-- initialize_database() in db/connection.py, after missing columns are added and
+-- duplicate active rows are deduplicated.
+
+-- ============================================================
+-- classification_attempts table: Audit log of failed classification attempts
+-- Successful classifications live in `classifications`; every failed LLM call
+-- or validation failure is recorded here for forensics and retries.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS classification_attempts (
+    attempt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feedback_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    model_name TEXT,
+    prompt_version TEXT,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number >= 1),
+    error_type TEXT CHECK (error_type IN ('invalid_json', 'validation_error', 'provider_error', 'timeout')),
+    error_detail TEXT,
+    raw_response TEXT CHECK (raw_response IS NULL OR length(raw_response) <= 8000),  -- caller truncates before insert
+    attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (feedback_id) REFERENCES feedback(feedback_id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+);
+
+-- Indexes for classification attempt queries
+CREATE INDEX IF NOT EXISTS idx_classification_attempts_feedback_id ON classification_attempts(feedback_id);
+CREATE INDEX IF NOT EXISTS idx_classification_attempts_product_id ON classification_attempts(product_id);
 
 -- ============================================================
 -- clusters table: Identified customer problem groups
